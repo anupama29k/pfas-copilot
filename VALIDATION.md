@@ -3,8 +3,10 @@
 This document describes how PFAS Copilot reaches a verdict, how that logic is tested, and what it does
 not do. It is written to be shared with a customer's compliance or quality team.
 
-Version 0.3 · rules database: 33 obligations (10 US states, EU, France, Denmark), sources compiled to
-Oct 30, 2026.
+Version 0.4 · rules database: 41 obligations (11 US states, EU, France, Denmark), compiled Oct 30, 2026.
+Connecticut, Rhode Island, Vermont, Maine, California (AB 347), New Mexico and New York rules were checked
+against statute text or agency pages; Washington, Minnesota and Colorado rely partly on 2025–2026 law-firm
+and testing-lab alerts and are rated Medium.
 
 ## 1. Decision rules
 
@@ -72,9 +74,9 @@ Run `pytest`: 26 tests, passing on Python 3.9 and 3.12.
 
 ## 4. Known limitations
 
-- **Rules are compiled from secondary legal and industry sources**, not from the statutes themselves.
-  Each rule has a confidence rating. Medium and Low ratings (Connecticut, Rhode Island, Vermont,
-  Maine's severe-wet rule, California registration) must be checked against the statute before use.
+- **Some rules still rest on secondary sources.** Washington (final rule text not reachable), Minnesota
+  (agency site not reachable) and Colorado (enrolled bill not reachable) are rated Medium; New York's
+  numeric level is not yet set; New Mexico's labeling rule is preliminarily enjoined. Check these before relying on them.
 - **The PDF parser has been tested on synthetic reports only.** Real lab formats vary, so every
   extracted value is human-reviewed by design. Scanned PDFs (no text layer) are not supported.
 - **No standardized TOF method exists for textiles yet.** Results from different labs or methods may
@@ -88,5 +90,5 @@ Run `pytest`: 26 tests, passing on Python 3.9 and 3.12.
 1. Re-run 3–5 real, anonymized lab reports through the parser, and compare against values typed in by hand
    (target: ≥ 95% of fields correct before review).
 2. Have a second analyst independently assign verdicts for one sample brand, and reconcile any differences.
-3. Check every Medium/Low-confidence rule against the statute text, and raise its rating or correct it.
+3. Close the remaining Medium-confidence rules (WA, MN, CO, NY level, NM injunction scope) against primary text.
 4. Have counsel review the certificate wording and the report's limitations section.

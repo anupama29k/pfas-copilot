@@ -60,7 +60,7 @@ Tests: `pytest` (engine, PDF parser, API), on Python 3.9 and later.
 app/                 FastAPI app (main.py), SQLite storage (db.py), UI (static/)
 pfas_copilot/        engine: rules, models, check, risk, audit, report, CLI
 pfas_copilot/parsers PDF lab-report parser
-pfas_copilot/data    rules.xlsx — the rules workbook (33 obligations)
+pfas_copilot/data    rules.xlsx — the rules workbook (41 obligations, 11 US states + EU, France, Denmark)
 samples/             sample brand CSVs and synthetic lab PDFs (fictional labs)
 scripts/             build_rules_workbook.py, make_sample_pdfs.py
 tests/               engine, parser and API tests
