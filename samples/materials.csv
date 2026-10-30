@@ -1,0 +1,7 @@
+material_id,sku,component,material_type,finish,supplier,declared_intentional
+M1,RJ-100,shell,nylon ripstop,C0 DWR,Mill A,no
+M2,RJ-100,membrane,ePTFE laminate,,Mill B,yes
+M3,SH-200,shell,polyester softshell,DWR,Mill C,no
+M4,SH-200,lining,polyester mesh,,Mill C,no
+M5,KT-300,shell,cotton twill,stain repellent,Mill D,unknown
+M6,TB-400,body,cotton canvas,,Mill E,no

@@ -1,0 +1,7 @@
+material_id,lab,report_id,method,analyte,result,unit,loq,uncertainty_pct,date
+M1,Lab X,R-001,TOF (CIC),TOF,12,ppm,5,20,2026-09-01
+M1,Lab X,R-001,EN ISO 20999,TF,30,ppm,5,15,2026-09-01
+M3,Lab X,R-002,TOF (CIC),TOF,48,ppm,5,20,2026-09-03
+M4,Lab X,R-002,TOF (CIC),TOF,<LOQ,ppm,5,,2026-09-03
+M5,Lab Y,R-010,TOF (CIC),TOF,140,ppm,10,20,2026-08-15
+M6,Lab Y,R-011,TOF (CIC),TOF,<LOQ,ppm,10,,2026-08-15

@@ -1,0 +1,22 @@
+[project]
+name = "pfas-copilot"
+version = "0.2.0"
+description = "PFAS compliance copilot for apparel brands: rules engine, lab-report parsing, verdicts, certificates"
+requires-python = ">=3.10"
+dependencies = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9", "openpyxl>=3.1", "pdfplumber>=0.11"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "httpx>=0.27", "reportlab>=4"]
+
+[project.scripts]
+pfas-copilot = "pfas_copilot.cli:main"
+
+[tool.setuptools]
+packages = ["pfas_copilot", "pfas_copilot.parsers", "app"]
+
+[tool.setuptools.package-data]
+pfas_copilot = ["data/*.xlsx"]
+app = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
