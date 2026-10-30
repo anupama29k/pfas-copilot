@@ -24,7 +24,7 @@ docker build -t pfas-copilot .
 docker run -p 8000:8000 -v pfas-data:/data pfas-copilot
 ```
 
-Tests: `pytest` (engine, PDF parser, API).
+Tests: `pytest` (engine, PDF parser, API), on Python 3.9 and later.
 
 ## How it works
 
@@ -39,8 +39,10 @@ Tests: `pytest` (engine, PDF parser, API).
    otherwise At risk. U is the lab's expanded uncertainty, or 20% by default. Bans without a number rely
    on supplier declarations, with a fluorine screen ≥ 100 ppm flagged as likely intentional use.
    TOF vs total fluorine and ppb targeted limits are handled separately. Evaluated on an as-of date and a look-ahead date.
-4. **Outputs**: test plan with cost estimates, HTML report (`/api/audits/{id}/report.html`), certificate
-   drafts (`/api/audits/{id}/certificates.md`), deadline timeline.
+4. **Outputs**: test plan with cost estimates, the **client report** (Client report page → Save as PDF),
+   a technical report, certificate drafts and a deadline timeline.
+5. **Trust**: every rule links to its sources; every confirmation records the reviewer and time; all
+   changes are logged. See [VALIDATION.md](VALIDATION.md) for the decision rules, test scenarios and limitations.
 
 ## Layout
 

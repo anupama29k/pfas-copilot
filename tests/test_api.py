@@ -36,7 +36,8 @@ def test_full_flow_csv_then_pdf_review():
 
     e = c.get(f"/api/audits/{i}/evaluate", params={"as_of": "2026-10-30", "lookahead": "2027-01-01"}).json()
     assert e["pending_review"] == 5
-    assert c.post(f"/api/audits/{i}/results/confirm-all").json()["confirmed"] == 5
+    assert c.post(f"/api/audits/{i}/results/confirm-all").status_code == 422  # reviewer required
+    assert c.post(f"/api/audits/{i}/results/confirm-all", params={"reviewer": "Anu"}).json()["confirmed"] == 5
 
     e = c.get(f"/api/audits/{i}/evaluate", params={"as_of": "2026-10-30", "lookahead": "2027-01-01"}).json()
     now, jan = ({p["sku"]: p["by_market"] for p in d["products"]} for d in e["dates"])
@@ -77,3 +78,30 @@ def test_cannot_confirm_without_material():
     c.patch(f"/api/audits/{i}/results/{row['id']}", json={"material_id": None})
     r = c.patch(f"/api/audits/{i}/results/{row['id']}", json={"status": "confirmed"})
     assert r.status_code == 422
+
+
+def test_client_report_has_evidence_sources_and_audit_trail():
+    i = new_audit("Report Co")
+    c.post(f"/api/audits/{i}/load-sample")
+    pdf = (ROOT / "samples" / "pdfs" / "labx_R-002_tof.pdf").read_bytes()
+    c.post(f"/api/audits/{i}/results/pdf", files={"file": ("labx.pdf", pdf, "application/pdf")})
+    row = next(x for x in c.get(f"/api/audits/{i}").json()["results"] if x["status"] == "needs_review")
+    assert c.patch(f"/api/audits/{i}/results/{row['id']}", json={"status": "confirmed"}).status_code == 422
+    ok = c.patch(f"/api/audits/{i}/results/{row['id']}", json={"status": "confirmed", "reviewer": "Anu"}).json()
+    assert ok["confirmed_by"] == "Anu" and ok["confirmed_at"]
+    html = c.get(f"/api/audits/{i}/client-report.html",
+                 params={"as_of": "2026-10-30", "lookahead": "2027-01-01", "prepared_by": "Anu, PFAS Copilot"}).text
+    for section in ("Executive summary", "Findings that need action", "Action plan", "Methodology",
+                    "Limitations", "Appendix A. Lab evidence", "Appendix B. Rules applied and sources", "Appendix C. Change log"):
+        assert section in html
+    assert "DRAFT" in html and "morganlewis.com" in html and "Anu, PFAS Copilot" in html
+    assert "awaiting review" in html  # the other PDF row is still pending
+    final = c.get(f"/api/audits/{i}/client-report.html", params={"final": "true"}).text
+    assert "DRAFT — FOR REVIEW" not in final
+    actions = [e["action"] for e in c.get(f"/api/audits/{i}").json()["events"]]
+    assert "upload lab PDF" in actions and "confirmed" in actions
+
+
+def test_rules_carry_sources():
+    rules = c.get("/api/rules").json()
+    assert all(r["sources"] for r in rules)

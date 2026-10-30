@@ -29,6 +29,7 @@ class Rule:
     confidence: str
     scope: frozenset[str] = field(default_factory=frozenset)
     limit_kind: str = "tbd"
+    sources: tuple = ()  # ((title, url), ...)
 
     @property
     def limit_ppm(self) -> float | None:
@@ -73,6 +74,13 @@ def _to_date(v) -> dt.date | None:
 
 def load_rules(path: str | Path = DEFAULT_RULES) -> list[Rule]:
     wb = load_workbook(path, data_only=True, read_only=True)
+    src = {}
+    if "Sources" in wb.sheetnames:
+        it = wb["Sources"].iter_rows(values_only=True)
+        next(it, None)
+        for row in it:
+            if row and row[0]:
+                src[str(row[0]).strip()] = (str(row[2]) if len(row) > 2 and row[2] else str(row[1]), str(row[1]))
     ws = wb["Rules"]
     rows = ws.iter_rows(values_only=True)
     header = [str(h).strip() if h else "" for h in next(rows)]
@@ -105,6 +113,7 @@ def load_rules(path: str | Path = DEFAULT_RULES) -> list[Rule]:
                 confidence=str(g(row, "Confidence")),
                 scope=frozenset(s.strip() for s in str(g(row, "Scope codes")).split(",") if s.strip()),
                 limit_kind=str(g(row, "Limit kind", "tbd")).strip() or "tbd",
+                sources=tuple(src[k.strip()] for k in str(g(row, "Sources")).split(";") if k.strip() in src),
             )
         )
     return rules

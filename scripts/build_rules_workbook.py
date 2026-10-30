@@ -20,7 +20,7 @@ S={
 # id, jur, law, type, scope, exclusions/notes, basis, value, unit, test, date, severe_wet, duties, confidence, sources
 R=[
 ("CA-1","California","AB 1817 (Health & Safety Code), 2022","Sales/manufacture ban","New textile articles: apparel, accessories, handbags, backpacks, bedding, towels, curtains, upholstery","Excludes PPE/professional uniforms, vehicle/vessel/aircraft textiles, filters, lab textiles, building fabric; severe-wet outdoor deferred to 2028","Intentionally added OR total organic fluorine",100,"ppm TOF","TOF (no standardized textile method; confirm lab method)",D(2025,1,1),"Deferred to 2028; must carry 'Made with PFAS chemicals' disclosure meanwhile","Certificate of compliance from manufacturer to sellers","High","ML; VEN"),
-("CA-2","California","AB 1817","Threshold tightening","Same as CA-1","Certificate duty applies at the lower level","Intentionally added OR total organic fluorine",50,"ppm TOF","TOF",D(2027,1,1),"n/a until 2028","Certificate of compliance","High","VEN; TS"),
+("CA-2","California","AB 1817","Threshold tightening","New textile articles: apparel, accessories, handbags, backpacks, bedding, towels, curtains, upholstery","Certificate duty applies at the lower level","Intentionally added OR total organic fluorine",50,"ppm TOF","TOF",D(2027,1,1),"n/a until 2028","Certificate of compliance","High","VEN; TS"),
 ("CA-3","California","AB 1817","Sales/manufacture ban","Outdoor apparel for severe wet conditions","End of deferral","Intentionally added OR total organic fluorine",50,"ppm TOF","TOF",D(2028,1,1),"Banned","Certificate of compliance","High","ML; TS"),
 ("CA-4","California","AB 347 (2024)","Registration","Textile producers/distributors selling into CA","DTSC to publish accepted test methods and lab accreditations; state enforcement from 2030","n/a",None,"","Per DTSC list (pending)",D(2029,7,1),"","Registration + statement of compliance with DTSC","Medium","TS; WP"),
 ("NY-1","New York","ECL §37-0121","Sales ban","New apparel (regular wear, formal, uniforms)","Severe-wet outdoor apparel exempt until 2028","Intentionally added",None,"","Supplier declarations / formulation records; targeted testing optional",D(2025,1,1),"Exempt until 2028","None specified","High","ML; VEN"),
@@ -146,11 +146,13 @@ tm.cell(len(TM)+3,1,"Cost source: HQTS, All you need to know about PFAS testing 
 
 # Sources
 so=wb.create_sheet("Sources")
-so.append(["Key","URL"])
-for k,u in S.items(): so.append([k,u])
+TITLES={'ML': 'Morgan Lewis (2024): New York and California bans on PFAS in textiles and apparel', 'VEN': 'Venable via Mondaq (2024): Fashion industry beware — PFAS bans on apparel', 'TS': 'Textile School: PFAS in textiles — limits, dates and test methods by market', 'FOX': 'Fox Rothschild (Sept 2026): State regulation of PFAS in the fashion industry', 'MD': 'Manufacturing Dive (2026): State PFAS laws taking effect in 2026', 'GK': 'Godfrey & Kahn: Patchwork of state PFAS regulations', 'WP': 'WavePLM (2026): PFAS in clothing — what brands must test, disclose and fix', 'ML26': 'Morgan Lewis (Jan 2026): State regulation of PFAS in consumer products in 2026', 'SBI': 'SBI Finishing: PFAS-free stain protection and 2026 state bans'}
+so.append(["Key","URL","Title"])
+for k,u in S.items(): so.append([k,u,TITLES.get(k,"")])
 for row in so.iter_rows():
     for cell in row: cell.font=base
-for c in (1,2): so.cell(1,c).font=hdr_font; so.cell(1,c).fill=hdr_fill
+for c in (1,2,3): so.cell(1,c).font=hdr_font; so.cell(1,c).fill=hdr_fill
+so.column_dimensions["C"].width=80
 so.column_dimensions["A"].width=8; so.column_dimensions["B"].width=110
 
 import sys; wb.save(sys.argv[1] if len(sys.argv) > 1 else "rules.xlsx")

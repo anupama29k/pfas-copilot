@@ -22,13 +22,14 @@ from pfas_copilot.report import render_ca_certificates, render_report
 from pfas_copilot.rules import load_rules
 
 from . import db
+from .client_report import render_client_report
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = Path(__file__).parent / "static"
 SAMPLES = ROOT / "samples"
 RULES = load_rules()
 
-app = FastAPI(title="PFAS Copilot", version="0.2.0")
+app = FastAPI(title="PFAS Copilot", version="0.3.0")
 db.init()
 
 
@@ -105,10 +106,12 @@ class ResultPatch(BaseModel):
     loq_ppm: Optional[float] = None
     uncertainty_rel: Optional[float] = None
     status: Optional[str] = None
+    reviewer: Optional[str] = None
 
 
 class MaterialPatch(BaseModel):
     declared_intentional: str
+    reviewer: Optional[str] = None
 
 
 # ---------------------------------------------------------------- rules
@@ -116,7 +119,8 @@ class MaterialPatch(BaseModel):
 def get_rules():
     return [dict(id=r.rule_id, jurisdiction=r.jurisdiction, law=r.law, type=r.rule_type, products=r.products,
                  limit_value=r.limit_value, limit_unit=r.limit_unit, effective=r.effective.isoformat() if r.effective else None,
-                 kind=r.limit_kind, scope=sorted(r.scope), duties=r.duties, confidence=r.confidence) for r in RULES]
+                 kind=r.limit_kind, scope=sorted(r.scope), duties=r.duties, confidence=r.confidence,
+                 sources=[{"title": t, "url": u} for t, u in r.sources]) for r in RULES]
 
 
 @app.get("/api/markets")
@@ -153,6 +157,7 @@ def get_audit(audit_id: int):
         a["materials"] = db.rows(con, "SELECT * FROM materials WHERE audit_id=? ORDER BY material_id", audit_id)
         a["documents"] = db.rows(con, "SELECT * FROM documents WHERE audit_id=? ORDER BY id DESC", audit_id)
         a["results"] = db.rows(con, "SELECT * FROM results WHERE audit_id=? ORDER BY status DESC, id", audit_id)
+        a["events"] = db.rows(con, "SELECT * FROM events WHERE audit_id=? ORDER BY id DESC LIMIT 200", audit_id)
         return a
 
 
@@ -185,6 +190,7 @@ def import_products(audit_id: int, data: bytes):
         _audit_or_404(con, audit_id)
         con.execute("DELETE FROM products WHERE audit_id=?", (audit_id,))
         con.executemany("INSERT INTO products VALUES (?,?,?,?,?,?)", clean)
+        db.log(con, audit_id, "upload products", f"{len(clean)} SKU(s)")
     return {"imported": len(clean), "warnings": warnings}
 
 
@@ -210,6 +216,7 @@ def import_materials(audit_id: int, data: bytes):
                           r.get("finish", ""), r.get("supplier", ""), decl))
         con.execute("DELETE FROM materials WHERE audit_id=?", (audit_id,))
         con.executemany("INSERT INTO materials VALUES (?,?,?,?,?,?,?,?)", clean)
+        db.log(con, audit_id, "upload materials", f"{len(clean)} material(s)")
     return {"imported": len(clean)}
 
 
@@ -239,11 +246,12 @@ def import_results_csv(audit_id: int, data: bytes, filename: str):
                 raise HTTPException(422, f"Row {i}: {e}")
             unc = float(r["uncertainty_pct"]) / 100 if r.get("uncertainty_pct") else None
             con.execute("""INSERT INTO results (audit_id, document_id, material_id, lab, report_id, method, analyte,
-                           value_ppm, below_loq, loq_ppm, uncertainty_rel, result_date, raw_result, status)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'confirmed')""",
+                           value_ppm, below_loq, loq_ppm, uncertainty_rel, result_date, raw_result, status, confirmed_by, confirmed_at)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'confirmed', 'CSV import', datetime('now'))""",
                         (audit_id, doc_id, r["material_id"], r.get("lab", ""), r.get("report_id", ""), r.get("method", ""),
                          r["analyte"], val, int(below), loq, unc, r.get("date") or None, r["result"]))
             n += 1
+        db.log(con, audit_id, "upload results CSV", f"{filename}: {n} result(s), imported as confirmed")
     return {"imported": n, "document_id": doc_id}
 
 
@@ -278,6 +286,7 @@ async def upload_results_pdf(audit_id: int, file: UploadFile = File(...)):
                         (audit_id, doc_id, mid, r.sample_ref, r.description, rep.lab, rep.report_id, rep.method,
                          r.analyte, r.value_ppm, int(r.below_loq), r.loq_ppm, rep.uncertainty_rel,
                          rep.date.isoformat() if rep.date else None, r.raw_result, r.confidence, "; ".join(notes)))
+        db.log(con, audit_id, "upload lab PDF", f"{rep.filename}: {len(rep.rows)} result(s) read, waiting for review")
     return {"document_id": doc_id, "rows": len(rep.rows), "lab": rep.lab, "report_id": rep.report_id,
             "layout": rep.layout, "warnings": rep.warnings}
 
@@ -285,6 +294,7 @@ async def upload_results_pdf(audit_id: int, file: UploadFile = File(...)):
 @app.patch("/api/audits/{audit_id}/results/{rid}")
 def patch_result(audit_id: int, rid: int, body: ResultPatch):
     fields = body.model_dump(exclude_unset=True)
+    reviewer = (fields.pop("reviewer", None) or "").strip()
     if "status" in fields and fields["status"] not in {"confirmed", "needs_review", "rejected"}:
         raise HTTPException(422, "Invalid status")
     with db.tx() as con:
@@ -299,22 +309,40 @@ def patch_result(audit_id: int, rid: int, body: ResultPatch):
                 raise HTTPException(422, "Unknown material")
         if "below_loq" in fields:
             fields["below_loq"] = int(fields["below_loq"])
+        if fields.get("status") == "confirmed":
+            if not reviewer:
+                raise HTTPException(422, "Enter your name as reviewer before confirming results")
+            fields["confirmed_by"] = reviewer
+            fields["confirmed_at"] = dt.datetime.now().isoformat(timespec="seconds")
+        old = r[0]
         if fields:
             sets = ", ".join(f"{k}=?" for k in fields)
             con.execute(f"UPDATE results SET {sets} WHERE id=?", (*fields.values(), rid))
+            label = f"result #{rid} ({old['analyte']}, {old['material_id'] or old['sample_ref']})"
+            if "value_ppm" in fields and fields["value_ppm"] != old["value_ppm"]:
+                db.log(con, audit_id, "edit value", f"{label}: {old['value_ppm']} -> {fields['value_ppm']} ppm", reviewer)
+            if "material_id" in fields and fields["material_id"] != old["material_id"]:
+                db.log(con, audit_id, "assign material", f"{label}: -> {fields['material_id']}", reviewer)
+            if "status" in fields and fields["status"] != old["status"]:
+                db.log(con, audit_id, fields["status"], label, reviewer)
         return db.rows(con, "SELECT * FROM results WHERE id=?", rid)[0]
 
 
 @app.post("/api/audits/{audit_id}/results/confirm-all")
-def confirm_all(audit_id: int, document_id: Optional[int] = None):
+def confirm_all(audit_id: int, document_id: Optional[int] = None, reviewer: str = ""):
+    if not reviewer.strip():
+        raise HTTPException(422, "Enter your name as reviewer before confirming results")
     with db.tx() as con:
         _audit_or_404(con, audit_id)
-        q = "UPDATE results SET status='confirmed' WHERE audit_id=? AND status='needs_review' AND material_id IS NOT NULL"
-        args = [audit_id]
+        now = dt.datetime.now().isoformat(timespec="seconds")
+        q = ("UPDATE results SET status='confirmed', confirmed_by=?, confirmed_at=? "
+             "WHERE audit_id=? AND status='needs_review' AND material_id IS NOT NULL")
+        args = [reviewer.strip(), now, audit_id]
         if document_id:
             q += " AND document_id=?"
             args.append(document_id)
         n = con.execute(q, args).rowcount
+        db.log(con, audit_id, "confirm all", f"{n} result(s)", reviewer.strip())
     return {"confirmed": n}
 
 
@@ -333,6 +361,7 @@ def patch_material(audit_id: int, material_id: str, body: MaterialPatch):
                         (body.declared_intentional, audit_id, material_id)).rowcount
         if not n:
             raise HTTPException(404, "Material not found")
+        db.log(con, audit_id, "supplier declaration", f"{material_id}: {body.declared_intentional}", body.reviewer or "")
     return {"ok": True}
 
 
@@ -379,14 +408,16 @@ def evaluate(audit_id: int, as_of: Optional[str] = None, lookahead: Optional[str
                 "verdicts": [{"material_id": v.material_id, "component": mats[v.material_id].component,
                               "material_type": mats[v.material_id].material_type, "rule_id": v.rule_id,
                               "jurisdiction": v.jurisdiction, "verdict": v.verdict, "reason": v.reason,
-                              "law": rules[v.rule_id].law, "confidence": rules[v.rule_id].confidence}
+                              "law": rules[v.rule_id].law, "confidence": rules[v.rule_id].confidence,
+                              "sources": [{"title": t, "url": u} for t, u in rules[v.rule_id].sources]}
                              for v in pr.verdicts]})
         out["dates"].append({"date": d.isoformat(), "counts": counts, "products": prods})
     out["test_plan"] = [s.__dict__ for s in res.test_plan]
     out["risk"] = res.risk
     out["deadlines"] = [{"date": r.effective.isoformat(), "rule_id": r.rule_id, "jurisdiction": r.jurisdiction,
                          "type": r.rule_type, "products": r.products, "limit_value": r.limit_value,
-                         "limit_unit": r.limit_unit, "confidence": r.confidence}
+                         "limit_unit": r.limit_unit, "confidence": r.confidence,
+                         "sources": [{"title": t, "url": u} for t, u in r.sources]}
                         for r in sorted((r for r in RULES if r.effective and r.jurisdiction in markets
                                          and r.effective >= res.dates[0] - dt.timedelta(days=730)),
                                         key=lambda r: r.effective)]
@@ -397,6 +428,17 @@ def evaluate(audit_id: int, as_of: Optional[str] = None, lookahead: Optional[str
 def report(audit_id: int, as_of: Optional[str] = None, lookahead: Optional[str] = None):
     res, _ = _evaluate(audit_id, as_of, lookahead)
     return render_report(res)
+
+
+@app.get("/api/audits/{audit_id}/client-report.html", response_class=HTMLResponse)
+def client_report(audit_id: int, as_of: Optional[str] = None, lookahead: Optional[str] = None,
+                  prepared_by: str = "", final: bool = False):
+    res, _ = _evaluate(audit_id, as_of, lookahead)
+    with db.tx() as con:
+        docs = db.rows(con, "SELECT * FROM documents WHERE audit_id=? ORDER BY id", audit_id)
+        results = db.rows(con, "SELECT * FROM results WHERE audit_id=? ORDER BY material_id, analyte", audit_id)
+        events = db.rows(con, "SELECT * FROM events WHERE audit_id=? ORDER BY id", audit_id)
+    return render_client_report(res, docs, results, events, prepared_by=prepared_by, final=final)
 
 
 @app.get("/api/audits/{audit_id}/certificates.md", response_class=PlainTextResponse)

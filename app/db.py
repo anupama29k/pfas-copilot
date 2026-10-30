@@ -41,9 +41,21 @@ CREATE TABLE IF NOT EXISTS results (
   lab TEXT, report_id TEXT, method TEXT, analyte TEXT NOT NULL,
   value_ppm REAL, below_loq INTEGER DEFAULT 0, loq_ppm REAL, uncertainty_rel REAL,
   result_date TEXT, raw_result TEXT, confidence REAL DEFAULT 1.0, notes TEXT DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'confirmed'   -- confirmed | needs_review | rejected
+  status TEXT NOT NULL DEFAULT 'confirmed',  -- confirmed | needs_review | rejected
+  confirmed_by TEXT, confirmed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  audit_id INTEGER NOT NULL REFERENCES audits(id) ON DELETE CASCADE,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  actor TEXT, action TEXT NOT NULL, detail TEXT
 );
 """
+
+MIGRATIONS = [
+    ("results", "confirmed_by", "ALTER TABLE results ADD COLUMN confirmed_by TEXT"),
+    ("results", "confirmed_at", "ALTER TABLE results ADD COLUMN confirmed_at TEXT"),
+]
 
 
 def connect() -> sqlite3.Connection:
@@ -67,6 +79,15 @@ def tx():
 def init():
     with tx() as con:
         con.executescript(SCHEMA)
+        for table, col, sql in MIGRATIONS:  # upgrade databases created by older versions
+            cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+            if col not in cols:
+                con.execute(sql)
+
+
+def log(con, audit_id: int, action: str, detail: str = "", actor: str = ""):
+    con.execute("INSERT INTO events (audit_id, actor, action, detail) VALUES (?,?,?,?)",
+                (audit_id, actor or "", action, detail))
 
 
 def rows(con, sql, *args) -> list[dict]:
