@@ -8,6 +8,7 @@ import json
 import re
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
@@ -58,7 +59,7 @@ def _tokens(s: str) -> set[str]:
     return {t for t in re.findall(r"[a-z0-9]+", (s or "").lower()) if len(t) > 2}
 
 
-def guess_material(con, audit_id: int, description: str, sample_ref: str) -> tuple[str | None, float]:
+def guess_material(con, audit_id: int, description: str, sample_ref: str) -> tuple[Optional[str], float]:
     """Best-matching material for a lab sample description (token overlap)."""
     mats = db.rows(con, """SELECT m.*, p.name AS pname FROM materials m JOIN products p
                            ON p.audit_id=m.audit_id AND p.sku=m.sku WHERE m.audit_id=?""", audit_id)
@@ -98,12 +99,12 @@ class AuditIn(BaseModel):
 
 
 class ResultPatch(BaseModel):
-    material_id: str | None = None
-    value_ppm: float | None = None
-    below_loq: bool | None = None
-    loq_ppm: float | None = None
-    uncertainty_rel: float | None = None
-    status: str | None = None
+    material_id: Optional[str] = None
+    value_ppm: Optional[float] = None
+    below_loq: Optional[bool] = None
+    loq_ppm: Optional[float] = None
+    uncertainty_rel: Optional[float] = None
+    status: Optional[str] = None
 
 
 class MaterialPatch(BaseModel):
@@ -305,7 +306,7 @@ def patch_result(audit_id: int, rid: int, body: ResultPatch):
 
 
 @app.post("/api/audits/{audit_id}/results/confirm-all")
-def confirm_all(audit_id: int, document_id: int | None = None):
+def confirm_all(audit_id: int, document_id: Optional[int] = None):
     with db.tx() as con:
         _audit_or_404(con, audit_id)
         q = "UPDATE results SET status='confirmed' WHERE audit_id=? AND status='needs_review' AND material_id IS NOT NULL"
@@ -349,7 +350,7 @@ def load_sample(audit_id: int):
 
 
 # ---------------------------------------------------------------- evaluation
-def _evaluate(audit_id: int, as_of: str | None, lookahead: str | None):
+def _evaluate(audit_id: int, as_of: Optional[str], lookahead: Optional[str]):
     d0 = dt.date.fromisoformat(as_of) if as_of else dt.date.today()
     d1 = dt.date.fromisoformat(lookahead) if lookahead else None
     with db.tx() as con:
@@ -360,7 +361,7 @@ def _evaluate(audit_id: int, as_of: str | None, lookahead: str | None):
 
 
 @app.get("/api/audits/{audit_id}/evaluate")
-def evaluate(audit_id: int, as_of: str | None = None, lookahead: str | None = None):
+def evaluate(audit_id: int, as_of: Optional[str] = None, lookahead: Optional[str] = None):
     res, pending = _evaluate(audit_id, as_of, lookahead)
     rules = {r.rule_id: r for r in RULES}
     mats = {m.material_id: m for m in res.audit.materials}
@@ -393,13 +394,13 @@ def evaluate(audit_id: int, as_of: str | None = None, lookahead: str | None = No
 
 
 @app.get("/api/audits/{audit_id}/report.html", response_class=HTMLResponse)
-def report(audit_id: int, as_of: str | None = None, lookahead: str | None = None):
+def report(audit_id: int, as_of: Optional[str] = None, lookahead: Optional[str] = None):
     res, _ = _evaluate(audit_id, as_of, lookahead)
     return render_report(res)
 
 
 @app.get("/api/audits/{audit_id}/certificates.md", response_class=PlainTextResponse)
-def certificates(audit_id: int, as_of: str | None = None, lookahead: str | None = None, signatory: str = "[Name, title]"):
+def certificates(audit_id: int, as_of: Optional[str] = None, lookahead: Optional[str] = None, signatory: str = "[Name, title]"):
     res, _ = _evaluate(audit_id, as_of, lookahead)
     return render_ca_certificates(res, signatory)
 

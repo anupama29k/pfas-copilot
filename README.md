@@ -10,7 +10,7 @@ plan with costs, and draft California AB 1817 certificates of compliance.
 ## Run it
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate   # Python 3.9+
 pip install -r requirements-dev.txt
 uvicorn app.main:app --reload        # open http://127.0.0.1:8000
 ```
