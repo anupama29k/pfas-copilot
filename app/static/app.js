@@ -77,10 +77,10 @@ const views = {
   async setup() {
     const a = S.audit;
     const decl = m => `<label class="sr" for="d-${esc(m.material_id)}">Supplier declaration for ${esc(m.material_id)}</label><select id="d-${esc(m.material_id)}" data-decl="${esc(m.material_id)}">${["unknown", "no", "yes"].map(o => `<option ${m.declared_intentional === o ? "selected" : ""}>${o}</option>`).join("")}</select>`;
-    return `<h1>Products and materials</h1><p class="sub">Upload the product list first, then the materials. Re-uploading a file replaces it. Templates: <a href="/api/templates/products.csv">products.csv</a> · <a href="/api/templates/materials.csv">materials.csv</a>.</p>
+    return `<h1>Products and materials</h1><p class="sub">Upload the product list first, then the materials. Re-uploading a file replaces it. CSV or Excel (.xlsx). Templates: products <a href="/api/templates/products.xlsx">.xlsx</a> / <a href="/api/templates/products.csv">.csv</a> · materials <a href="/api/templates/materials.xlsx">.xlsx</a> / <a href="/api/templates/materials.csv">.csv</a>.</p>
     <div class="grid2">
-      <div class="card"><h2>1. Product list (CSV)</h2>${dropZone("products", ".csv", "sku, name, category, severe_wet, markets")}</div>
-      <div class="card"><h2>2. Materials (CSV)</h2>${dropZone("materials", ".csv", "material_id, sku, component, material_type, finish, supplier, declared_intentional")}</div>
+      <div class="card"><h2>1. Product list</h2>${dropZone("products", ".csv,.xlsx", "sku, name, category, severe_wet, markets")}</div>
+      <div class="card"><h2>2. Materials</h2>${dropZone("materials", ".csv,.xlsx", "material_id, sku, component, material_type, finish, supplier, declared_intentional")}</div>
     </div><div id="msg"></div>
     <div class="card"><h2>Products (${a.products.length})</h2>${a.products.length ? `<div class="scroll"><table><tr><th>SKU</th><th>Product</th><th>Category</th><th>Severe-wet</th><th>Markets</th></tr>
       ${a.products.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${esc(p.category)}</td><td>${p.severe_wet ? "Yes" : "No"}</td><td>${p.markets.map(esc).join(", ")}</td></tr>`).join("")}</table></div>` : `<p class="empty">No products yet.</p>`}</div>
@@ -101,7 +101,7 @@ const views = {
     ${mats.length ? "" : `<div class="err">Upload products and materials first, so results can be matched to materials.</div>`}
     <div class="card"><form class="row" id="revform"><label for="rev"><b>Reviewer</b> (recorded on every confirmation)</label><input type="text" id="rev" value="${esc(reviewer())}" placeholder="Your name" style="min-width:220px"><button class="btn small ghost" type="submit">Save</button></form></div>
     <div class="grid2"><div class="card"><h2>Lab report PDF</h2>${dropZone("pdf", ".pdf", "Text-based PDFs; scanned PDFs need OCR (not yet supported)")}</div>
-    <div class="card"><h2>Results CSV</h2>${dropZone("rcsv", ".csv", "material_id, analyte, result, unit, loq, uncertainty_pct, date…")}</div></div><div id="msg"></div>
+    <div class="card"><h2>Results CSV or Excel</h2>${dropZone("rcsv", ".csv,.xlsx", "material_id, analyte, result, unit, loq, uncertainty_pct, date…")}</div></div><div id="msg"></div>
     <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">To review (${review.length})</h2>${review.length ? `<button class="btn small" id="confirmall">Confirm all matched</button>` : ""}</div>
     ${review.length ? `<div class="scroll"><table><tr><th>Sample (from report)</th><th>Analyte</th><th>Result (ppm)</th><th>Raw</th><th>LOQ (ppm)</th><th>Material</th><th>Notes</th><th></th></tr>
       ${review.map(r => `<tr class="${r.confidence < 0.8 ? "lowconf" : ""}"><td><b>${esc(r.sample_ref)}</b><div class="reason">${esc(r.description)}</div></td><td>${esc(r.analyte)}</td><td>${val(r)}</td><td class="mono">${esc(r.raw_result)}</td><td class="mono">${fmt(r.loq_ppm)}</td><td>${matSel(r)}</td><td class="reason">${esc(r.notes)}</td>

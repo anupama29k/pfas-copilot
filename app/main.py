@@ -1,18 +1,22 @@
 """PFAS Copilot web app: FastAPI backend + static single-page UI."""
 from __future__ import annotations
 
+import base64
 import csv
 import datetime as dt
 import io
 import json
+import os
 import re
+import secrets
 import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from openpyxl import Workbook, load_workbook
 from pydantic import BaseModel
 
 from pfas_copilot.audit import run_audit
@@ -29,8 +33,27 @@ STATIC = Path(__file__).parent / "static"
 SAMPLES = ROOT / "samples"
 RULES = load_rules()
 
-app = FastAPI(title="PFAS Copilot", version="0.3.0")
+app = FastAPI(title="PFAS Copilot", version="0.4.0")
 db.init()
+
+# Optional password protection for hosted copies: set PFAS_PASSWORD (and optionally PFAS_USER).
+_PW = os.environ.get("PFAS_PASSWORD", "")
+_USER = os.environ.get("PFAS_USER", "pfas")
+
+
+@app.middleware("http")
+async def basic_auth(request: Request, call_next):
+    if not _PW or request.url.path == "/healthz":
+        return await call_next(request)
+    header = request.headers.get("authorization", "")
+    if header.startswith("Basic "):
+        try:
+            user, _, pw = base64.b64decode(header[6:]).decode().partition(":")
+            if secrets.compare_digest(user, _USER) and secrets.compare_digest(pw, _PW):
+                return await call_next(request)
+        except Exception:
+            pass
+    return Response("Login required", status_code=401, headers={"WWW-Authenticate": 'Basic realm="PFAS Copilot"'})
 
 
 # ---------------------------------------------------------------- helpers
@@ -41,9 +64,44 @@ def _audit_or_404(con, audit_id: int) -> dict:
     return a[0]
 
 
+def _norm_header(h) -> str:
+    return re.sub(r"\s+", "_", str(h or "").strip().lower())
+
+
+def _cell(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, (dt.datetime, dt.date)):
+        return v.date().isoformat() if isinstance(v, dt.datetime) else v.isoformat()
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v).strip()
+
+
 def _csv_rows(data: bytes) -> list[dict]:
-    text = data.decode("utf-8-sig")
-    return [{(k or "").strip(): (v or "").strip() for k, v in r.items()} for r in csv.DictReader(io.StringIO(text))]
+    """Rows from a CSV or an Excel (.xlsx) file; the first sheet's first non-empty row is the header."""
+    if data[:2] == b"PK":  # .xlsx is a zip archive
+        try:
+            wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        except Exception:
+            raise HTTPException(422, "Could not read that Excel file; save it as .xlsx or CSV")
+        it = wb.worksheets[0].iter_rows(values_only=True)
+        header = None
+        out = []
+        for row in it:
+            if header is None:
+                if row and any(c not in (None, "") for c in row):
+                    header = [_norm_header(c) for c in row]
+                continue
+            if not row or all(c in (None, "") for c in row):
+                continue
+            out.append({h: _cell(v) for h, v in zip(header, row) if h})
+        return out
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = data.decode("latin-1")
+    return [{_norm_header(k): (v or "").strip() for k, v in r.items()} for r in csv.DictReader(io.StringIO(text))]
 
 
 def _require(row: dict, cols: list[str], line: int):
@@ -450,10 +508,21 @@ def certificates(audit_id: int, as_of: Optional[str] = None, lookahead: Optional
 # ---------------------------------------------------------------- templates + UI
 @app.get("/api/templates/{name}")
 def template(name: str):
-    files = {"products.csv": "products.csv", "materials.csv": "materials.csv", "lab_results.csv": "lab_results.csv"}
-    if name not in files:
+    stem, _, ext = name.rpartition(".")
+    if stem not in {"products", "materials", "lab_results"} or ext not in {"csv", "xlsx"}:
         raise HTTPException(404)
-    return FileResponse(SAMPLES / files[name], media_type="text/csv", filename=name)
+    src = SAMPLES / f"{stem}.csv"
+    if ext == "csv":
+        return FileResponse(src, media_type="text/csv", filename=name)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = stem
+    for row in csv.reader(io.StringIO(src.read_text(encoding="utf-8"))):
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/healthz")

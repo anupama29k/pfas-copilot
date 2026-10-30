@@ -24,13 +24,23 @@ docker build -t pfas-copilot .
 docker run -p 8000:8000 -v pfas-data:/data pfas-copilot
 ```
 
+### Put it online (private, password-protected)
+
+1. Create a free account at [render.com](https://render.com) and connect your GitHub.
+2. New → **Blueprint** → choose `pfas-copilot`. Render reads `render.yaml`.
+3. In the service's **Environment** tab, set `PFAS_PASSWORD` to a strong password.
+4. Open the URL Render gives you; log in with user `pfas` and that password.
+
+The database lives on a 1 GB persistent disk (Starter plan). Any host that runs Docker works too:
+set `PFAS_PASSWORD` and mount a volume at `/data`.
+
 Tests: `pytest` (engine, PDF parser, API), on Python 3.9 and later.
 
 ## How it works
 
-1. **Products and materials** (CSV upload). Templates at `/api/templates/products.csv` and `materials.csv`.
+1. **Products and materials** (CSV or Excel upload). Templates at `/api/templates/products.xlsx` and `materials.xlsx` (or `.csv`).
    Each material carries the supplier's declaration on intentionally added PFAS (yes / no / unknown).
-2. **Lab results**: a results CSV, or lab-report **PDFs**. The PDF parser (`pfas_copilot/parsers/pdf.py`)
+2. **Lab results**: a results CSV or Excel file, or lab-report **PDFs**. The PDF parser (`pfas_copilot/parsers/pdf.py`)
    reads the report number, date, method and measurement uncertainty, finds result tables in either
    layout (one row per analyte, or one column per analyte), converts units to ppm, and matches each
    sample to a material by its description. PDF results stay in **To review** until a person confirms

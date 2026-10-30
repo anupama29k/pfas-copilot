@@ -105,3 +105,40 @@ def test_client_report_has_evidence_sources_and_audit_trail():
 def test_rules_carry_sources():
     rules = c.get("/api/rules").json()
     assert all(r["sources"] for r in rules)
+
+
+def test_excel_uploads_and_templates():
+    import io
+    from openpyxl import load_workbook
+    i = new_audit("Excel Co")
+    for name in ("products", "materials", "lab_results"):
+        r = c.get(f"/api/templates/{name}.xlsx")
+        assert r.status_code == 200 and r.content[:2] == b"PK"
+        assert load_workbook(io.BytesIO(r.content)).active.max_row > 1
+    xp = c.get("/api/templates/products.xlsx").content
+    xm = c.get("/api/templates/materials.xlsx").content
+    xr = c.get("/api/templates/lab_results.xlsx").content
+    assert c.post(f"/api/audits/{i}/products", files={"file": ("p.xlsx", xp)}).json()["imported"] == 4
+    assert c.post(f"/api/audits/{i}/materials", files={"file": ("m.xlsx", xm)}).json()["imported"] == 6
+    assert c.post(f"/api/audits/{i}/results/csv", files={"file": ("r.xlsx", xr)}).json()["imported"] == 6
+    e = c.get(f"/api/audits/{i}/evaluate", params={"as_of": "2026-10-30"}).json()
+    kt = next(p for p in e["dates"][0]["products"] if p["sku"] == "KT-300")
+    assert kt["by_market"]["California"] == "Fail"
+
+
+def test_headers_are_normalized():
+    i = new_audit("Header Co")
+    csv_text = "SKU,Name,Category,Severe Wet,Markets\nA1,Jacket,apparel,yes,California\n"
+    assert c.post(f"/api/audits/{i}/products", files={"file": ("p.csv", csv_text)}).json()["imported"] == 1
+
+
+def test_password_protection(monkeypatch):
+    import base64
+    import app.main as m
+    monkeypatch.setattr(m, "_PW", "s3cret")
+    assert c.get("/api/audits").status_code == 401
+    assert c.get("/healthz").status_code == 200
+    good = base64.b64encode(b"pfas:s3cret").decode()
+    assert c.get("/api/audits", headers={"Authorization": f"Basic {good}"}).status_code == 200
+    bad = base64.b64encode(b"pfas:nope").decode()
+    assert c.get("/api/audits", headers={"Authorization": f"Basic {bad}"}).status_code == 401
